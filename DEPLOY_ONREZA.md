@@ -19,8 +19,8 @@
 |------|----------|
 | Framework Preset | **Other** |
 | Install Command | `pip install .` |
-| Build Command | `python3 -c "import optimus; print('ok')"` |
-| Output Directory | `.` |
+| Build Command | `npm run build` |
+| Output Directory | `onreza-output` |
 
 Эти значения уже продублированы в [`onreza.toml`](onreza.toml) в корне репозитория.
 
@@ -29,7 +29,7 @@
 | Поле | Значение |
 |------|----------|
 | Compute type | **process** |
-| Entry point | `server.py` |
+| Entry point | `server.cjs` |
 | Health check | `/health` |
 
 ## 5. Environment variables (опционально)

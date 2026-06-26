@@ -11,3 +11,4 @@ data/*.db
 data/*.sqlite
 .pytest_cache/
 .DS_Store
+onreza-output/

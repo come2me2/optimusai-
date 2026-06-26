@@ -2,6 +2,7 @@
   "name": "optimus-ai",
   "private": true,
   "scripts": {
-    "start": "python3 server.py"
+    "build": "node scripts/build-onreza.cjs",
+    "start": "node server.cjs"
   }
 }

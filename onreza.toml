@@ -5,11 +5,11 @@ name = "optimus-ai"
 
 [build]
 install_command = "pip install ."
-command = "python3 -c \"import optimus; print('build ok')\""
-output_directory = "."
-output_dirs = ["."]
+command = "npm run build"
+output_directory = "onreza-output"
+output_dirs = ["onreza-output"]
 
 [deploy]
 compute = "process"
-entry = "server.py"
+entry = "server.cjs"
 health_check_path = "/health"
