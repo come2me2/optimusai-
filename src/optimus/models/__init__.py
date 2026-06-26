@@ -17,6 +17,25 @@ class ActionType(str, Enum):
     PAUSE = "pause"
     THROTTLE = "throttle"
     CREATIVE_FATIGUE = "creative_fatigue"
+    SHIFT_CREATIVE = "shift_creative"
+    PAUSE_CREATIVE = "pause_creative"
+
+
+class CreativeStatus(str, Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    WINNER = "winner"
+
+
+class Creative(BaseModel):
+    id: str
+    campaign_id: str
+    variant: str
+    name: str
+    headline: str
+    traffic_weight: float = 0.5
+    ctr_multiplier: float = 1.0
+    status: CreativeStatus = CreativeStatus.ACTIVE
 
 
 class Campaign(BaseModel):
@@ -48,6 +67,14 @@ class KPIs(BaseModel):
     impression_share: float = 0.0
 
 
+class CreativePeriodMetrics(BaseModel):
+    creative_id: str
+    variant: str
+    name: str
+    metrics: PeriodMetrics
+    kpis: KPIs = Field(default_factory=KPIs)
+
+
 class MetricsSnapshot(BaseModel):
     id: Optional[int] = None
     campaign_id: str
@@ -56,6 +83,7 @@ class MetricsSnapshot(BaseModel):
     metrics: PeriodMetrics
     kpis: KPIs
     bid: float
+    creative_breakdown: list[CreativePeriodMetrics] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -68,6 +96,7 @@ class Decision(BaseModel):
     new_bid: float
     reason: str
     kpis_before: KPIs
+    creative_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 

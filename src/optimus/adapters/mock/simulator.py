@@ -154,3 +154,121 @@ class MarketSimulator:
             spend=round(spend, 2),
             revenue=round(revenue, 2),
         )
+
+    def simulate_hour_with_creatives(
+        self,
+        simulated_hour: int,
+        daily_budget: float,
+        spend_so_far_today: float,
+        creatives: list,
+    ) -> tuple[PeriodMetrics, list]:
+        from optimus.metrics.calculator import compute_kpis
+        from optimus.models import CreativePeriodMetrics, CreativeStatus, PeriodMetrics
+
+        active = [c for c in creatives if c.status == CreativeStatus.ACTIVE]
+        if len(active) < 2:
+            total = self.simulate_hour(simulated_hour, daily_budget, spend_so_far_today)
+            if active:
+                c = active[0]
+                return total, [
+                    CreativePeriodMetrics(
+                        creative_id=c.id,
+                        variant=c.variant,
+                        name=c.name,
+                        metrics=total,
+                        kpis=compute_kpis(total),
+                    )
+                ]
+            return total, []
+
+        hour_of_day = simulated_hour % 24
+        day_of_week = (simulated_hour // 24) % 7
+        if self._rng.random() < 0.04:
+            self.competitor_shock = self._rng.uniform(0.0, 1.0)
+
+        demand = (
+            self.config.base_market_volume
+            * self._hour_multiplier(hour_of_day)
+            * self._day_multiplier(day_of_week)
+            * (1.0 - self.competitor_shock * 0.15)
+        )
+        share = self.impression_share(self.current_bid)
+        noise = self._rng.uniform(0.85, 1.15)
+        total_impressions = max(0, int(demand * share * noise / 24.0))
+
+        position = self._auction_position(self.current_bid)
+        ctr_base = self.config.base_ctr * (0.6 + 0.8 * position)
+        market_pressure = 1.0 + self.config.competition_level * position
+        effective_cpc = max(
+            self.config.market_cpc_floor,
+            self.current_bid * market_pressure * self._rng.uniform(0.92, 1.08),
+        )
+        cr = max(0.02, min(self.config.base_cr * self._rng.uniform(0.85, 1.15), 0.2))
+
+        weight_sum = sum(c.traffic_weight for c in active)
+        breakdown: list[CreativePeriodMetrics] = []
+        total = PeriodMetrics()
+
+        for creative in active:
+            w = creative.traffic_weight / weight_sum if weight_sum > 0 else 1 / len(active)
+            imp = int(total_impressions * w)
+            ctr = ctr_base * creative.ctr_multiplier * (1.0 - self.creative_fatigue)
+            ctr *= self._rng.uniform(0.9, 1.1)
+            ctr = max(0.005, min(ctr, 0.12))
+            clicks = _sample_binomial(imp, ctr, self._rng) if imp > 0 else 0
+            spend = clicks * effective_cpc
+            conversions = _sample_binomial(clicks, cr, self._rng) if clicks > 0 else 0
+            revenue = conversions * self.config.conversion_value
+            pm = PeriodMetrics(
+                impressions=imp,
+                clicks=clicks,
+                conversions=conversions,
+                spend=round(spend, 2),
+                revenue=round(revenue, 2),
+            )
+            breakdown.append(
+                CreativePeriodMetrics(
+                    creative_id=creative.id,
+                    variant=creative.variant,
+                    name=creative.name,
+                    metrics=pm,
+                    kpis=compute_kpis(pm),
+                )
+            )
+            total.impressions += imp
+            total.clicks += clicks
+            total.conversions += conversions
+            total.spend += pm.spend
+            total.revenue += pm.revenue
+
+        hourly_budget = daily_budget / 24.0
+        if total.spend > hourly_budget * 1.2 and total.spend > 0:
+            scale = (hourly_budget * 1.2) / total.spend
+            total = self._scale_breakdown(breakdown, scale, compute_kpis)
+        if spend_so_far_today + total.spend > daily_budget and total.spend > 0:
+            scale = max(0.0, daily_budget - spend_so_far_today) / total.spend
+            total = self._scale_breakdown(breakdown, scale, compute_kpis)
+
+        total.spend = round(total.spend, 2)
+        total.revenue = round(total.revenue, 2)
+        return total, breakdown
+
+    @staticmethod
+    def _scale_breakdown(breakdown, scale, compute_kpis):
+        from optimus.models import PeriodMetrics
+
+        total = PeriodMetrics()
+        for item in breakdown:
+            m = item.metrics
+            m.impressions = int(m.impressions * scale)
+            m.clicks = int(m.clicks * scale)
+            m.conversions = int(m.conversions * scale)
+            m.spend = round(m.spend * scale, 2)
+            m.revenue = round(m.revenue * scale, 2)
+            item.kpis = compute_kpis(m)
+            total.impressions += m.impressions
+            total.clicks += m.clicks
+            total.conversions += m.conversions
+            total.spend += m.spend
+            total.revenue += m.revenue
+        return total

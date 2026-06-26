@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from optimus.agent.loop import AgentLoop
 from optimus.metrics.calculator import compute_kpis
 from optimus.metrics.store import MetricsStore, DEFAULT_DB_PATH
+from optimus.models import PeriodMetrics
 
 
 def _resolve_static_dir() -> Path:
@@ -142,5 +143,22 @@ def create_app(db_path: Optional[Path] = None) -> FastAPI:
     async def get_decisions(campaign_id: str, limit: int = 50):
         decisions = store.get_decisions(campaign_id, limit=limit)
         return [d.model_dump() for d in decisions]
+
+    @app.get("/creatives/{campaign_id}")
+    async def get_creatives(campaign_id: str):
+        campaign = store.get_campaign(campaign_id)
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
+        creatives = store.get_creatives(campaign_id)
+        cum = store.get_cumulative_creative_metrics(campaign_id)
+        result = []
+        for c in creatives:
+            m = cum.get(c.id, PeriodMetrics())
+            result.append({
+                "creative": c.model_dump(),
+                "metrics": m.model_dump(),
+                "kpis": compute_kpis(m).model_dump(),
+            })
+        return result
 
     return app

@@ -85,6 +85,18 @@ app.get("/decisions/:id", (req, res) => {
   res.json(store.getDecisions(req.params.id, limit));
 });
 
+app.get("/creatives/:id", (req, res) => {
+  const campaign = store.getCampaign(req.params.id);
+  if (!campaign) return res.status(404).json({ detail: "Campaign not found" });
+  const creatives = store.getCreatives(req.params.id);
+  const cum = store.getCumulativeCreativeMetrics(req.params.id);
+  res.json(creatives.map((c) => ({
+    creative: c,
+    metrics: cum[c.id] || { impressions: 0, clicks: 0, conversions: 0, spend: 0, revenue: 0 },
+    kpis: computeKpis(cum[c.id] || {}),
+  })));
+});
+
 app.listen(port, host, () => {
   console.log(`[optimus] ready http://${host}:${port} health=/health`);
 });

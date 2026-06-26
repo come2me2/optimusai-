@@ -82,6 +82,15 @@
       margin-right: 6px;
     }
     #status { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+    .ab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .ab-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: #fafbfc; }
+    .ab-card.winner { border-color: var(--green); background: #ecfdf5; }
+    .ab-card.paused { opacity: 0.55; }
+    .ab-variant { font-weight: 600; font-size: 1rem; }
+    .ab-headline { color: var(--muted); font-size: 0.8rem; margin: 4px 0 10px; }
+    .ab-weight { height: 6px; background: #e5e7eb; border-radius: 3px; margin: 8px 0; overflow: hidden; }
+    .ab-weight-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+    .ab-stats { display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -100,6 +109,11 @@
   </div>
 
   <div class="grid" id="kpis"></div>
+
+  <div class="card" style="margin-bottom:24px">
+    <h3 style="margin-bottom:12px;font-size:0.9rem;color:var(--muted)">A/B тест креативов</h3>
+    <div class="ab-grid" id="creatives">Запустите кампанию</div>
+  </div>
 
   <div class="charts">
     <div class="chart-card"><h3>Показы и клики</h3><canvas id="chartTraffic"></canvas></div>
@@ -176,10 +190,11 @@
 
     async function refresh() {
       if (!campaignId) return;
-      const [summary, metrics, decisions] = await Promise.all([
+      const [summary, metrics, decisions, creatives] = await Promise.all([
         api(`/campaigns/${campaignId}`),
         api(`/metrics/${campaignId}?limit=200`),
         api(`/decisions/${campaignId}?limit=30`),
+        api(`/creatives/${campaignId}`),
       ]);
 
       const c = summary.campaign;
@@ -201,6 +216,25 @@
       ].map(([label, val]) =>
         `<div class="card"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div></div>`
       ).join("");
+
+      document.getElementById("creatives").innerHTML = creatives.length
+        ? creatives.map(({ creative: c, metrics: cm, kpis: ck }) => {
+            const pct = (c.traffic_weight * 100).toFixed(0);
+            const cls = c.status === "paused" ? "ab-card paused" : c.status === "winner" ? "ab-card winner" : "ab-card";
+            return `<div class="${cls}">
+              <div class="ab-variant">${c.variant} — ${c.name} <span style="color:var(--muted);font-weight:400">(${c.status})</span></div>
+              <div class="ab-headline">${c.headline}</div>
+              <div class="ab-weight"><div class="ab-weight-fill" style="width:${pct}%"></div></div>
+              <div style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">Трафик: ${pct}%</div>
+              <div class="ab-stats">
+                <span>CTR ${(ck.ctr * 100).toFixed(2)}%</span>
+                <span>CPC ${fmt(ck.cpc)} ₽</span>
+                <span>CPA ${fmt(ck.cpa)} ₽</span>
+                <span>${fmt(cm.clicks)} кликов</span>
+              </div>
+            </div>`;
+          }).join("")
+        : "<div class='decision-meta'>Нет креативов</div>";
 
       const labels = metrics.map(s => `t${s.tick}`);
       const impressions = metrics.map(s => s.metrics.impressions);

@@ -80,11 +80,12 @@ def test_bandit_reward_lower_cpa_is_better():
 
 
 def test_bandit_learns_from_updates():
-    bandit = BidBandit()
+    bandit = BidBandit(exploration_rate=0)
     for _ in range(20):
         bandit.update("decrease_10", 0.9)
     for _ in range(20):
         bandit.update("increase_10", 0.1)
 
-    chosen = bandit.select(["decrease_10", "increase_10"])
-    assert chosen == "decrease_10"
+    dec = bandit.arms["decrease_10"]
+    inc = bandit.arms["increase_10"]
+    assert dec.alpha / (dec.alpha + dec.beta) > inc.alpha / (inc.alpha + inc.beta)

@@ -11,6 +11,7 @@ from optimus.models import (
     PeriodMetrics,
 )
 from optimus.optimizer.bandit import BidBandit
+from optimus.optimizer.creative_ab import CreativeAbEngine
 from optimus.optimizer.engine import OptimizerEngine
 
 
@@ -25,6 +26,7 @@ class AgentLoop:
     ) -> None:
         self.store = store or MetricsStore()
         self.optimizer = optimizer or OptimizerEngine()
+        self.creative_ab = CreativeAbEngine()
         self._adapters: dict[str, AdPlatformAdapter] = {}
 
     def get_adapter(self, campaign: Campaign) -> AdPlatformAdapter:
@@ -52,13 +54,17 @@ class AgentLoop:
         adapter = self.get_adapter(campaign)
         tick = self.store.get_tick(campaign_id)
         simulated_hour = tick
+        creatives = self.store.get_creatives(campaign_id)
 
-        # --- Observe: advance market and collect period metrics ---
+        # --- Observe ---
         if isinstance(adapter, MockYandexAdapter):
-            period = adapter.advance_tick_for_campaign(campaign, simulated_hour)
+            period, creative_breakdown = adapter.advance_tick_for_campaign(
+                campaign, simulated_hour, creatives
+            )
         else:
             adapter.advance_tick(simulated_hour)
             period = adapter.get_period_metrics(campaign)
+            creative_breakdown = []
 
         impression_share = adapter.get_impression_share(campaign)
         kpis = compute_kpis(period, impression_share=impression_share)
@@ -70,6 +76,7 @@ class AgentLoop:
             metrics=period,
             kpis=kpis,
             bid=campaign.current_bid,
+            creative_breakdown=creative_breakdown,
         )
         self.store.save_snapshot(snapshot)
 
@@ -134,6 +141,20 @@ class AgentLoop:
 
         self.store.save_decision(decision)
 
+        # --- Creative A/B ---
+        cum_creative = self.store.get_cumulative_creative_metrics(campaign_id)
+        ab_result = self.creative_ab.evaluate(
+            campaign_id=campaign_id,
+            tick=tick,
+            creatives=creatives,
+            cumulative_by_creative=cum_creative,
+            window_kpis=window_kpis,
+            current_bid=decision.new_bid,
+        )
+        if ab_result.decision:
+            self.store.save_decision(ab_result.decision)
+            self.store.save_creatives(ab_result.updated_creatives)
+
         # --- Learn ---
         reward = bandit.compute_reward(
             cpa=window_kpis.cpa if window_kpis.cpa > 0 else cumulative_kpis.cpa,
@@ -152,6 +173,8 @@ class AgentLoop:
             "window_kpis": window_kpis.model_dump(),
             "cumulative_kpis": cumulative_kpis.model_dump(),
             "decision": decision.model_dump(),
+            "creative_decision": ab_result.decision.model_dump() if ab_result.decision else None,
+            "creatives": [c.model_dump() for c in ab_result.updated_creatives],
             "bid": decision.new_bid,
         }
 

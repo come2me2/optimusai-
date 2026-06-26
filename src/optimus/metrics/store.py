@@ -12,11 +12,19 @@ from optimus.models import (
     BidHistoryEntry,
     Campaign,
     CampaignStatus,
+    Creative,
+    CreativePeriodMetrics,
+    CreativeStatus,
     Decision,
     KPIs,
     MetricsSnapshot,
     PeriodMetrics,
 )
+
+DEFAULT_CREATIVES = [
+    {"variant": "A", "name": "Креатив A", "headline": "Скидка 20% — только сегодня", "ctr_multiplier": 1.0},
+    {"variant": "B", "name": "Креатив B", "headline": "Бесплатная доставка за 2 часа", "ctr_multiplier": 1.15},
+]
 
 DEFAULT_DB_PATH = Path(
     os.environ.get(
@@ -100,8 +108,31 @@ class MetricsStore:
                     bandit_state_json TEXT NOT NULL DEFAULT '{}',
                     FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
                 );
+
+                CREATE TABLE IF NOT EXISTS creatives (
+                    id TEXT PRIMARY KEY,
+                    campaign_id TEXT NOT NULL,
+                    variant TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    headline TEXT NOT NULL,
+                    traffic_weight REAL NOT NULL DEFAULT 0.5,
+                    ctr_multiplier REAL NOT NULL DEFAULT 1.0,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+                );
                 """
             )
+            self._migrate_columns(conn)
+
+    def _migrate_columns(self, conn: sqlite3.Connection) -> None:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(metrics_snapshots)")}
+        if "creative_breakdown_json" not in cols:
+            conn.execute(
+                "ALTER TABLE metrics_snapshots ADD COLUMN creative_breakdown_json TEXT DEFAULT '[]'"
+            )
+        dcols = {row[1] for row in conn.execute("PRAGMA table_info(decisions)")}
+        if "creative_id" not in dcols:
+            conn.execute("ALTER TABLE decisions ADD COLUMN creative_id TEXT")
 
     def create_campaign(
         self,
@@ -145,7 +176,29 @@ class MetricsStore:
                 "INSERT INTO agent_state (campaign_id, current_tick, bandit_state_json) VALUES (?, 0, '{}')",
                 (campaign.id,),
             )
+        self._seed_default_creatives(campaign.id)
         return campaign
+
+    def _seed_default_creatives(self, campaign_id: str) -> None:
+        weight = 1.0 / len(DEFAULT_CREATIVES)
+        with self._conn() as conn:
+            for spec in DEFAULT_CREATIVES:
+                conn.execute(
+                    """
+                    INSERT INTO creatives
+                    (id, campaign_id, variant, name, headline, traffic_weight, ctr_multiplier, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+                    """,
+                    (
+                        str(uuid4()),
+                        campaign_id,
+                        spec["variant"],
+                        spec["name"],
+                        spec["headline"],
+                        weight,
+                        spec["ctr_multiplier"],
+                    ),
+                )
 
     def get_campaign(self, campaign_id: str) -> Optional[Campaign]:
         with self._conn() as conn:
@@ -184,13 +237,50 @@ class MetricsStore:
                 (target_cpa, campaign_id),
             )
 
+    def get_creatives(self, campaign_id: str) -> list[Creative]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM creatives WHERE campaign_id = ? ORDER BY variant",
+                (campaign_id,),
+            ).fetchall()
+        if not rows:
+            self._seed_default_creatives(campaign_id)
+            return self.get_creatives(campaign_id)
+        return [self._row_to_creative(r) for r in rows]
+
+    def save_creatives(self, creatives: list[Creative]) -> None:
+        with self._conn() as conn:
+            for c in creatives:
+                conn.execute(
+                    """
+                    UPDATE creatives SET traffic_weight = ?, ctr_multiplier = ?, status = ?
+                    WHERE id = ?
+                    """,
+                    (c.traffic_weight, c.ctr_multiplier, c.status.value, c.id),
+                )
+
+    def get_cumulative_creative_metrics(self, campaign_id: str) -> dict[str, PeriodMetrics]:
+        totals: dict[str, PeriodMetrics] = {}
+        for snap in self.get_snapshots(campaign_id, limit=10000):
+            for item in snap.creative_breakdown:
+                if item.creative_id not in totals:
+                    totals[item.creative_id] = PeriodMetrics()
+                t = totals[item.creative_id]
+                t.impressions += item.metrics.impressions
+                t.clicks += item.metrics.clicks
+                t.conversions += item.metrics.conversions
+                t.spend += item.metrics.spend
+                t.revenue += item.metrics.revenue
+        return totals
+
     def save_snapshot(self, snapshot: MetricsSnapshot) -> MetricsSnapshot:
         with self._conn() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO metrics_snapshots
-                (campaign_id, tick, simulated_hour, metrics_json, kpis_json, bid, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (campaign_id, tick, simulated_hour, metrics_json, kpis_json, bid,
+                 creative_breakdown_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snapshot.campaign_id,
@@ -199,6 +289,7 @@ class MetricsStore:
                     snapshot.metrics.model_dump_json(),
                     snapshot.kpis.model_dump_json(),
                     snapshot.bid,
+                    json.dumps([c.model_dump() for c in snapshot.creative_breakdown]),
                     snapshot.created_at.isoformat(),
                 ),
             )
@@ -235,8 +326,8 @@ class MetricsStore:
             cursor = conn.execute(
                 """
                 INSERT INTO decisions
-                (campaign_id, tick, action, bid_change_percent, new_bid, reason, kpis_before_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (campaign_id, tick, action, bid_change_percent, new_bid, reason, kpis_before_json, creative_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     decision.campaign_id,
@@ -246,6 +337,7 @@ class MetricsStore:
                     decision.new_bid,
                     decision.reason,
                     decision.kpis_before.model_dump_json(),
+                    decision.creative_id,
                     decision.created_at.isoformat(),
                 ),
             )
@@ -329,16 +421,19 @@ class MetricsStore:
             conn.execute("DELETE FROM metrics_snapshots WHERE campaign_id = ?", (campaign_id,))
             conn.execute("DELETE FROM decisions WHERE campaign_id = ?", (campaign_id,))
             conn.execute("DELETE FROM bid_history WHERE campaign_id = ?", (campaign_id,))
+            conn.execute("DELETE FROM creatives WHERE campaign_id = ?", (campaign_id,))
             conn.execute(
                 "UPDATE agent_state SET current_tick = 0, bandit_state_json = '{}' WHERE campaign_id = ?",
                 (campaign_id,),
             )
+        self._seed_default_creatives(campaign_id)
 
     def delete_all_campaigns(self) -> None:
         with self._conn() as conn:
             conn.execute("DELETE FROM metrics_snapshots")
             conn.execute("DELETE FROM decisions")
             conn.execute("DELETE FROM bid_history")
+            conn.execute("DELETE FROM creatives")
             conn.execute("DELETE FROM agent_state")
             conn.execute("DELETE FROM campaigns")
 
@@ -354,10 +449,27 @@ class MetricsStore:
             current_bid=row["current_bid"],
             status=CampaignStatus(row["status"]),
             created_at=datetime.fromisoformat(row["created_at"]),
+            )
+        self._seed_default_creatives(campaign_id)
+
+    @staticmethod
+    def _row_to_creative(row: sqlite3.Row) -> Creative:
+        return Creative(
+            id=row["id"],
+            campaign_id=row["campaign_id"],
+            variant=row["variant"],
+            name=row["name"],
+            headline=row["headline"],
+            traffic_weight=row["traffic_weight"],
+            ctr_multiplier=row["ctr_multiplier"],
+            status=CreativeStatus(row["status"]),
         )
 
     @staticmethod
     def _row_to_snapshot(row: sqlite3.Row) -> MetricsSnapshot:
+        breakdown_raw = row["creative_breakdown_json"] if "creative_breakdown_json" in row.keys() else "[]"
+        if breakdown_raw is None:
+            breakdown_raw = "[]"
         return MetricsSnapshot(
             id=row["id"],
             campaign_id=row["campaign_id"],
@@ -366,11 +478,15 @@ class MetricsStore:
             metrics=PeriodMetrics.model_validate_json(row["metrics_json"]),
             kpis=KPIs.model_validate_json(row["kpis_json"]),
             bid=row["bid"],
+            creative_breakdown=[
+                CreativePeriodMetrics.model_validate(item) for item in json.loads(breakdown_raw)
+            ],
             created_at=datetime.fromisoformat(row["created_at"]),
         )
 
     @staticmethod
     def _row_to_decision(row: sqlite3.Row) -> Decision:
+        creative_id = row["creative_id"] if "creative_id" in row.keys() else None
         return Decision(
             id=row["id"],
             campaign_id=row["campaign_id"],
@@ -380,5 +496,6 @@ class MetricsStore:
             new_bid=row["new_bid"],
             reason=row["reason"],
             kpis_before=KPIs.model_validate_json(row["kpis_before_json"]),
+            creative_id=creative_id,
             created_at=datetime.fromisoformat(row["created_at"]),
         )

@@ -58,8 +58,12 @@ class MockYandexAdapter(AdPlatformAdapter):
         )
         self._spend_today += self._last_period_metrics.spend
 
-    def advance_tick_for_campaign(self, campaign: Campaign, simulated_hour: int) -> PeriodMetrics:
-        """Advance tick with campaign-specific budget and conversion value."""
+    def advance_tick_for_campaign(
+        self, campaign: Campaign, simulated_hour: int, creatives: list | None = None
+    ) -> tuple[PeriodMetrics, list]:
+        """Advance tick with campaign-specific budget; returns (total, creative_breakdown)."""
+        from optimus.models import CreativePeriodMetrics
+
         day = simulated_hour // 24
         if day != self._last_day:
             self._spend_today = 0.0
@@ -67,16 +71,26 @@ class MockYandexAdapter(AdPlatformAdapter):
 
         if self._paused or campaign.status.value == "paused":
             self._last_period_metrics = PeriodMetrics()
-            return self._last_period_metrics
+            return self._last_period_metrics, []
 
         self.simulator.config.conversion_value = campaign.conversion_value
-        self._last_period_metrics = self.simulator.simulate_hour(
-            simulated_hour=simulated_hour,
-            daily_budget=campaign.daily_budget,
-            spend_so_far_today=self._spend_today,
-        )
-        self._spend_today += self._last_period_metrics.spend
-        return self._last_period_metrics
+        if creatives and len(creatives) >= 2:
+            total, breakdown = self.simulator.simulate_hour_with_creatives(
+                simulated_hour=simulated_hour,
+                daily_budget=campaign.daily_budget,
+                spend_so_far_today=self._spend_today,
+                creatives=creatives,
+            )
+        else:
+            total = self.simulator.simulate_hour(
+                simulated_hour=simulated_hour,
+                daily_budget=campaign.daily_budget,
+                spend_so_far_today=self._spend_today,
+            )
+            breakdown = []
+        self._last_period_metrics = total
+        self._spend_today += total.spend
+        return total, breakdown
 
     def apply_creative_fatigue(self) -> None:
         self.simulator.apply_creative_fatigue()
