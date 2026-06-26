@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
@@ -17,7 +18,12 @@ from optimus.models import (
     PeriodMetrics,
 )
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / "data" / "optimus.db"
+DEFAULT_DB_PATH = Path(
+    os.environ.get(
+        "OPTIMUS_DB_PATH",
+        str(Path(__file__).resolve().parents[3] / "data" / "optimus.db"),
+    )
+)
 
 
 class MetricsStore:

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -10,7 +11,22 @@ from optimus.agent.loop import AgentLoop
 from optimus.metrics.calculator import compute_kpis
 from optimus.metrics.store import MetricsStore, DEFAULT_DB_PATH
 
-STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+
+def _resolve_static_dir() -> Path:
+    if os.environ.get("OPTIMUS_STATIC_DIR"):
+        return Path(os.environ["OPTIMUS_STATIC_DIR"])
+    for base in (
+        Path(__file__).resolve().parents[2],
+        Path(__file__).resolve().parent,
+        Path.cwd(),
+    ):
+        candidate = base / "static"
+        if candidate.is_dir():
+            return candidate
+    return Path(__file__).resolve().parents[2] / "static"
+
+
+STATIC_DIR = _resolve_static_dir()
 
 
 class CreateCampaignRequest(BaseModel):

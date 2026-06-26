@@ -1,0 +1,15 @@
+#:schema https://docs.onreza.ru/schemas/onreza-project-v1.schema.json
+
+[project]
+name = "optimus-ai"
+
+[build]
+install_command = "pip install ."
+command = "python3 -c \"import optimus; print('build ok')\""
+output_directory = "."
+output_dirs = ["."]
+
+[deploy]
+compute = "process"
+entry = "server.py"
+health_check_path = "/health"
