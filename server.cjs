@@ -10,6 +10,8 @@ const dataDir = process.env.OPTIMUS_DATA_DIR || path.join("/tmp", "optimus-data"
 const dbPath = process.env.OPTIMUS_DB_PATH || path.join(dataDir, "optimus.db");
 const staticDir = process.env.OPTIMUS_STATIC_DIR || path.join(__dirname, "static");
 
+console.log(`[optimus] starting on ${host}:${port} (runtime: ${typeof Bun !== "undefined" ? "bun" : "node"})`);
+
 const store = new MetricsStore(dbPath);
 const loop = new AgentLoop(store);
 const app = express();
@@ -84,5 +86,5 @@ app.get("/decisions/:id", (req, res) => {
 });
 
 app.listen(port, host, () => {
-  console.log(`Optimus AI listening on http://${host}:${port}`);
+  console.log(`[optimus] ready http://${host}:${port} health=/health`);
 });

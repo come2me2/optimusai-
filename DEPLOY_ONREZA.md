@@ -30,6 +30,7 @@
 |------|----------|
 | Compute type | **process** |
 | Entry point | `server.cjs` |
+| Health check | **HTTP** `/health` (не TCP) |
 | Health check | `/health` |
 
 ## 5. Environment variables (опционально)
