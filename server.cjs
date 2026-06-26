@@ -1,9 +1,22 @@
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const path = require("path");
+
+function resolvePython() {
+  if (process.env.PYTHON) return process.env.PYTHON;
+  for (const bin of ["python3", "python"]) {
+    try {
+      execSync(`${bin} --version`, { stdio: "ignore" });
+      return bin;
+    } catch {
+      /* try next */
+    }
+  }
+  return "python3";
+}
 
 const port = process.env.PORT || "8000";
 const host = process.env.HOST || "0.0.0.0";
-const python = process.env.PYTHON || "python3";
+const python = resolvePython();
 const serverPy = path.join(__dirname, "server.py");
 
 const child = spawn(python, [serverPy], {

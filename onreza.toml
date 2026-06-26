@@ -4,7 +4,7 @@
 name = "optimus-ai"
 
 [build]
-install_command = "pip install ."
+install_command = "npm install"
 command = "npm run build"
 output_directory = "onreza-output"
 output_dirs = ["onreza-output"]

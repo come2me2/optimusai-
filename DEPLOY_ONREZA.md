@@ -18,7 +18,7 @@
 | Поле | Значение |
 |------|----------|
 | Framework Preset | **Other** |
-| Install Command | `pip install .` |
+| Install Command | `npm install` |
 | Build Command | `npm run build` |
 | Output Directory | `onreza-output` |
 
