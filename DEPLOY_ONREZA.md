@@ -68,7 +68,7 @@ OPTIMUS_DATA_DIR=/tmp/optimus-data PORT=8000 python3 server.py
 
 ## Если сборка падает
 
-ONREZA в первую очередь заточен под Node.js. Если `pip install` не находит Python:
+ONREZA — **только Node.js** (Python на билдере нет). Деплой идёт через Node-сервер (`server.cjs` + `lib/`).
 
 1. Убедись, что **Install Command** задан явно (`pip install .`), а не `npm install`
 2. Напиши в поддержку ONREZA про Python `process` deploy

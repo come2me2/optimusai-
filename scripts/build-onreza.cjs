@@ -1,52 +1,35 @@
 #!/usr/bin/env node
 const { execSync } = require("child_process");
-const { mkdirSync, cpSync, existsSync } = require("fs");
+const { mkdirSync, cpSync, writeFileSync } = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const out = path.join(root, "onreza-output");
 
-function resolvePython() {
-  for (const bin of ["python3", "python"]) {
-    try {
-      execSync(`${bin} --version`, { stdio: "ignore" });
-      return bin;
-    } catch {
-      /* try next */
-    }
-  }
-  return "python3";
-}
-
-function pipInstall(cwd, python) {
-  const attempts = [
-    `${python} -m pip install .`,
-    "python3 -m pip install .",
-    "python -m pip install .",
-    "pip3 install .",
-  ];
-  for (const cmd of attempts) {
-    try {
-      console.log(">", cmd);
-      execSync(cmd, { cwd, stdio: "inherit" });
-      return;
-    } catch {
-      console.log("!", cmd, "failed, trying next...");
-    }
-  }
-  throw new Error("Could not run pip install — python3/pip not found on build image");
-}
-
-const python = resolvePython();
-pipInstall(root, python);
-
 mkdirSync(out, { recursive: true });
 
-for (const item of ["static", "server.py", "server.cjs", "pyproject.toml", "requirements.txt"]) {
+for (const item of ["lib", "static", "server.cjs"]) {
   const src = path.join(root, item);
-  if (!existsSync(src)) continue;
   const dest = path.join(out, item);
   cpSync(src, dest, { recursive: true });
 }
 
+writeFileSync(
+  path.join(out, "package.json"),
+  JSON.stringify(
+    {
+      name: "optimus-ai",
+      private: true,
+      type: "commonjs",
+      scripts: { start: "node server.cjs" },
+      dependencies: { express: "^4.21.2" },
+      engines: { node: ">=22" },
+    },
+    null,
+    2
+  )
+);
+
+console.log("> npm install --omit=dev (onreza-output)");
+execSync("npm install --omit=dev", { cwd: out, stdio: "inherit" });
 console.log("> build output:", out);

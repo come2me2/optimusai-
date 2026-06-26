@@ -4,5 +4,11 @@
   "scripts": {
     "build": "node scripts/build-onreza.cjs",
     "start": "node server.cjs"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
