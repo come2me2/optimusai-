@@ -7,13 +7,15 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg: #0f1117;
-      --card: #1a1d27;
-      --text: #e8eaed;
-      --muted: #9aa0a6;
-      --accent: #6c9eff;
-      --green: #34d399;
-      --red: #f87171;
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --text: #1a1d26;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --border: #e5e7eb;
+      --green: #059669;
+      --red: #dc2626;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -30,13 +32,14 @@
       background: var(--card);
       border-radius: 12px;
       padding: 16px;
-      border: 1px solid #2a2d37;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }
     .kpi-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
     .kpi-value { font-size: 1.4rem; font-weight: 600; margin-top: 4px; }
     .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
     @media (max-width: 800px) { .charts { grid-template-columns: 1fr; } }
-    .chart-card { background: var(--card); border-radius: 12px; padding: 16px; border: 1px solid #2a2d37; }
+    .chart-card { background: var(--card); border-radius: 12px; padding: 16px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
     .chart-card h3 { font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
     .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
     button {
@@ -47,13 +50,15 @@
       border-radius: 8px;
       cursor: pointer;
       font-size: 0.9rem;
+      font-weight: 500;
     }
-    button:hover { opacity: 0.9; }
-    button.secondary { background: #2a2d37; color: var(--text); }
-    button.danger { background: #7f1d1d; }
+    button:hover { background: var(--accent-hover); }
+    button.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+    button.secondary:hover { background: #f9fafb; }
+    button.danger { background: #fef2f2; color: var(--red); border: 1px solid #fecaca; }
     input {
-      background: #2a2d37;
-      border: 1px solid #3a3d47;
+      background: #fff;
+      border: 1px solid var(--border);
       color: var(--text);
       padding: 10px 12px;
       border-radius: 8px;
@@ -62,7 +67,7 @@
     .decisions { max-height: 320px; overflow-y: auto; }
     .decision-item {
       padding: 10px 0;
-      border-bottom: 1px solid #2a2d37;
+      border-bottom: 1px solid var(--border);
       font-size: 0.85rem;
     }
     .decision-item:last-child { border-bottom: none; }
@@ -72,7 +77,7 @@
       padding: 2px 8px;
       border-radius: 4px;
       font-size: 0.7rem;
-      background: #2a3a5a;
+      background: #eff6ff;
       color: var(--accent);
       margin-right: 6px;
     }
@@ -205,10 +210,10 @@
 
       const chartOpts = {
         responsive: true,
-        plugins: { legend: { labels: { color: "#9aa0a6" } } },
+        plugins: { legend: { labels: { color: "#6b7280" } } },
         scales: {
-          x: { ticks: { color: "#9aa0a6", maxTicksLimit: 12 } },
-          y: { ticks: { color: "#9aa0a6" } },
+          x: { ticks: { color: "#9ca3af", maxTicksLimit: 12 }, grid: { color: "#f3f4f6" } },
+          y: { ticks: { color: "#9ca3af" }, grid: { color: "#f3f4f6" } },
         },
       };
 
@@ -218,8 +223,8 @@
         data: {
           labels,
           datasets: [
-            { label: "Показы", data: impressions, borderColor: "#6c9eff", tension: 0.3 },
-            { label: "Клики", data: clicks, borderColor: "#34d399", tension: 0.3 },
+            { label: "Показы", data: impressions, borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,0.08)", fill: true, tension: 0.3 },
+            { label: "Клики", data: clicks, borderColor: "#059669", backgroundColor: "rgba(5,150,105,0.08)", fill: true, tension: 0.3 },
           ],
         },
         options: chartOpts,
@@ -231,8 +236,8 @@
         data: {
           labels,
           datasets: [
-            { label: "Расход ₽", data: spend, borderColor: "#fbbf24", tension: 0.3 },
-            { label: "CPA ₽", data: cpaSeries, borderColor: "#f87171", tension: 0.3 },
+            { label: "Расход ₽", data: spend, borderColor: "#d97706", tension: 0.3 },
+            { label: "CPA ₽", data: cpaSeries, borderColor: "#dc2626", tension: 0.3 },
           ],
         },
         options: chartOpts,
