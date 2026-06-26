@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Optimus AI — Ad Agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --text: #e8eaed;
+      --muted: #9aa0a6;
+      --accent: #6c9eff;
+      --green: #34d399;
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      line-height: 1.5;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.9rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid #2a2d37;
+    }
+    .kpi-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+    .kpi-value { font-size: 1.4rem; font-weight: 600; margin-top: 4px; }
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 800px) { .charts { grid-template-columns: 1fr; } }
+    .chart-card { background: var(--card); border-radius: 12px; padding: 16px; border: 1px solid #2a2d37; }
+    .chart-card h3 { font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #2a2d37; color: var(--text); }
+    button.danger { background: #7f1d1d; }
+    input {
+      background: #2a2d37;
+      border: 1px solid #3a3d47;
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 8px;
+      width: 120px;
+    }
+    .decisions { max-height: 320px; overflow-y: auto; }
+    .decision-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #2a2d37;
+      font-size: 0.85rem;
+    }
+    .decision-item:last-child { border-bottom: none; }
+    .decision-meta { color: var(--muted); font-size: 0.75rem; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      background: #2a3a5a;
+      color: var(--accent);
+      margin-right: 6px;
+    }
+    #status { color: var(--muted); font-size: 0.85rem; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Optimus AI</h1>
+  <p class="subtitle">Самооптимизирующий рекламный агент (мок Яндекс Директ)</p>
+  <div id="status">Загрузка...</div>
+
+  <div class="actions">
+    <button onclick="initCampaign()">Новая кампания</button>
+    <button onclick="runTicks(1)">+1 тик</button>
+    <button onclick="runTicks(12)">+12 тиков</button>
+    <button onclick="runTicks(48)">+48 тиков</button>
+    <button class="secondary" onclick="resetCampaign()">Сброс</button>
+    <label>Target CPA: <input type="number" id="targetCpa" value="800" /></label>
+    <button class="secondary" onclick="updateTargetCpa()">Применить CPA</button>
+  </div>
+
+  <div class="grid" id="kpis"></div>
+
+  <div class="charts">
+    <div class="chart-card"><h3>Показы и клики</h3><canvas id="chartTraffic"></canvas></div>
+    <div class="chart-card"><h3>Расход и CPA</h3><canvas id="chartMoney"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px;font-size:0.9rem;color:var(--muted)">Лента решений агента</h3>
+    <div class="decisions" id="decisions"></div>
+  </div>
+
+  <script>
+    let campaignId = null;
+    let chartTraffic = null;
+    let chartMoney = null;
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...opts,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    async function loadCampaign() {
+      const campaigns = await api("/campaigns");
+      if (!campaigns.length) {
+        document.getElementById("status").textContent = "Нет кампании — нажмите «Новая кампания»";
+        return;
+      }
+      campaignId = campaigns[0].id;
+      await refresh();
+    }
+
+    async function initCampaign() {
+      const c = await api("/campaigns", {
+        method: "POST",
+        body: JSON.stringify({ name: "Тест CPA", daily_budget: 5000, target_cpa: 800, current_bid: 50 }),
+      });
+      campaignId = c.id;
+      await refresh();
+    }
+
+    async function runTicks(n) {
+      if (!campaignId) return alert("Сначала создайте кампанию");
+      document.getElementById("status").textContent = `Симуляция ${n} тиков...`;
+      await api(`/agent/run?campaign_id=${campaignId}`, {
+        method: "POST",
+        body: JSON.stringify({ ticks: n }),
+      });
+      await refresh();
+    }
+
+    async function resetCampaign() {
+      if (!campaignId) return;
+      await api(`/campaigns/${campaignId}/reset`, { method: "POST" });
+      await refresh();
+    }
+
+    async function updateTargetCpa() {
+      if (!campaignId) return;
+      const val = parseFloat(document.getElementById("targetCpa").value);
+      await api(`/campaigns/${campaignId}/target-cpa`, {
+        method: "PATCH",
+        body: JSON.stringify({ target_cpa: val }),
+      });
+      await refresh();
+    }
+
+    function fmt(n, dec = 0) {
+      return Number(n).toLocaleString("ru-RU", { maximumFractionDigits: dec });
+    }
+
+    async function refresh() {
+      if (!campaignId) return;
+      const [summary, metrics, decisions] = await Promise.all([
+        api(`/campaigns/${campaignId}`),
+        api(`/metrics/${campaignId}?limit=200`),
+        api(`/decisions/${campaignId}?limit=30`),
+      ]);
+
+      const c = summary.campaign;
+      const m = summary.cumulative_metrics;
+      const k = summary.kpis;
+      document.getElementById("targetCpa").value = c.target_cpa;
+      document.getElementById("status").textContent =
+        `${c.name} | тик ${summary.tick} | ставка ${c.current_bid} ₽ | бюджет ${c.daily_budget} ₽/день`;
+
+      document.getElementById("kpis").innerHTML = [
+        ["Показы", fmt(m.impressions)],
+        ["Клики", fmt(m.clicks)],
+        ["Конверсии", fmt(m.conversions)],
+        ["Расход", fmt(m.spend) + " ₽"],
+        ["CTR", (k.ctr * 100).toFixed(2) + "%"],
+        ["CPC", fmt(k.cpc) + " ₽"],
+        ["CPA", fmt(k.cpa) + " ₽"],
+        ["ROAS", k.roas.toFixed(2)],
+      ].map(([label, val]) =>
+        `<div class="card"><div class="kpi-label">${label}</div><div class="kpi-value">${val}</div></div>`
+      ).join("");
+
+      const labels = metrics.map(s => `t${s.tick}`);
+      const impressions = metrics.map(s => s.metrics.impressions);
+      const clicks = metrics.map(s => s.metrics.clicks);
+      const spend = metrics.map(s => s.metrics.spend);
+      const cpaSeries = metrics.map(s => s.kpis.cpa || null);
+
+      const chartOpts = {
+        responsive: true,
+        plugins: { legend: { labels: { color: "#9aa0a6" } } },
+        scales: {
+          x: { ticks: { color: "#9aa0a6", maxTicksLimit: 12 } },
+          y: { ticks: { color: "#9aa0a6" } },
+        },
+      };
+
+      if (chartTraffic) chartTraffic.destroy();
+      chartTraffic = new Chart(document.getElementById("chartTraffic"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            { label: "Показы", data: impressions, borderColor: "#6c9eff", tension: 0.3 },
+            { label: "Клики", data: clicks, borderColor: "#34d399", tension: 0.3 },
+          ],
+        },
+        options: chartOpts,
+      });
+
+      if (chartMoney) chartMoney.destroy();
+      chartMoney = new Chart(document.getElementById("chartMoney"), {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            { label: "Расход ₽", data: spend, borderColor: "#fbbf24", tension: 0.3 },
+            { label: "CPA ₽", data: cpaSeries, borderColor: "#f87171", tension: 0.3 },
+          ],
+        },
+        options: chartOpts,
+      });
+
+      document.getElementById("decisions").innerHTML = decisions.length
+        ? decisions.map(d => `
+          <div class="decision-item">
+            <span class="badge">tick ${d.tick}</span>
+            <strong>${d.action}</strong> → ${d.new_bid} ₽
+            <div>${d.reason}</div>
+            <div class="decision-meta">CPA до: ${fmt(d.kpis_before.cpa)} ₽</div>
+          </div>`).join("")
+        : "<div class='decision-meta'>Пока нет решений — запустите тики</div>";
+    }
+
+    loadCampaign().catch(e => {
+      document.getElementById("status").textContent = "Ошибка: " + e.message;
+    });
+  </script>
+</body>
+</html>
