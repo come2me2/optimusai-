@@ -1,14 +1,45 @@
+# Dependencies
+node_modules/
+
+# Secrets and local environment
+.env*
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-dist/
-build/
 .venv/
 venv/
-.env
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build output
+dist/
+build/
+onreza-output/
+*.tsbuildinfo
+
+# Local databases
 data/*.db
 data/*.sqlite
-.pytest_cache/
-.DS_Store
-onreza-output/
+data/*.sqlite3
+
+# Editor and backup files
+*.bak
+*.orig
+*.swp
+*~
